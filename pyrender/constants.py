@@ -54,6 +54,8 @@ class RenderFlags(object):
     FLAT = 4096
     """Render the color buffer flat, with no lighting computations."""
     SEG = 8192
+    """Render with truly flat colors (no colors outside of initial vertex colors should appear)."""
+    TRUE_FLAT = 16384
 
 
 class TextAlign:

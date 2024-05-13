@@ -125,7 +125,7 @@ class Renderer(object):
         self._update_context(scene, flags)
 
         # Render necessary shadow maps
-        if not bool(flags & RenderFlags.DEPTH_ONLY or flags & RenderFlags.SEG):
+        if not bool(flags & RenderFlags.DEPTH_ONLY or flags & RenderFlags.SEG or flags & RenderFlags.TRUE_FLAT):
             for ln in scene.light_nodes:
                 take_pass = False
                 if (isinstance(ln.light, DirectionalLight) and
@@ -326,7 +326,7 @@ class Renderer(object):
         self._configure_forward_pass_viewport(flags)
 
         # Clear it
-        if bool(flags & RenderFlags.SEG):
+        if bool(flags & RenderFlags.SEG or flags & RenderFlags.TRUE_FLAT):
             glClearColor(0.0, 0.0, 0.0, 1.0)
             if seg_node_map is None:
                 seg_node_map = {}
@@ -335,7 +335,7 @@ class Renderer(object):
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-        if not bool(flags & RenderFlags.SEG):
+        if not (bool(flags & RenderFlags.SEG) or bool(flags & RenderFlags.TRUE_FLAT)):
             glEnable(GL_MULTISAMPLE)
         else:
             glDisable(GL_MULTISAMPLE)
@@ -382,7 +382,7 @@ class Renderer(object):
 
                 # Next, bind the lighting
                 if not (flags & RenderFlags.DEPTH_ONLY or flags & RenderFlags.FLAT or
-                        flags & RenderFlags.SEG):
+                        flags & RenderFlags.SEG or flags & RenderFlags.TRUE_FLAT):
                     self._bind_lighting(scene, program, node, flags)
 
                 # Finally, bind and draw the primitive
@@ -516,7 +516,7 @@ class Renderer(object):
         primitive._bind()
 
         # Bind mesh material
-        if not (flags & RenderFlags.DEPTH_ONLY or flags & RenderFlags.SEG):
+        if not (flags & RenderFlags.DEPTH_ONLY or flags & RenderFlags.SEG or flags & RenderFlags.TRUE_FLAT):
             material = primitive.material
 
             # Bind textures
@@ -902,7 +902,8 @@ class Renderer(object):
         if (bool(program_flags & ProgramFlags.USE_MATERIAL) and
                 not flags & RenderFlags.DEPTH_ONLY and
                 not flags & RenderFlags.FLAT and
-                not flags & RenderFlags.SEG):
+                not flags & RenderFlags.SEG and
+                not flags & RenderFlags.TRUE_FLAT):
             vertex_shader = 'mesh.vert'
             fragment_shader = 'mesh.frag'
         elif bool(program_flags & (ProgramFlags.VERTEX_NORMALS |
@@ -919,6 +920,9 @@ class Renderer(object):
         elif flags & RenderFlags.SEG:
             vertex_shader = 'segmentation.vert'
             fragment_shader = 'segmentation.frag'
+        elif flags & RenderFlags.TRUE_FLAT:
+            vertex_shader = 'true_flat.vert'
+            fragment_shader = 'true_flat.frag'
         else:
             vertex_shader = 'mesh_depth.vert'
             fragment_shader = 'mesh_depth.frag'
@@ -1009,7 +1013,7 @@ class Renderer(object):
 
         # If using offscreen render, bind main framebuffer
         if flags & RenderFlags.OFFSCREEN:
-            self._configure_main_framebuffer()
+            self._configure_main_framebuffer(flags)
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
         else:
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
@@ -1051,7 +1055,7 @@ class Renderer(object):
         if self._shadow_fb is not None:
             glDeleteFramebuffers(1, [self._shadow_fb])
 
-    def _configure_main_framebuffer(self):
+    def _configure_main_framebuffer(self, flags):
         # If mismatch with prior framebuffer, delete it
         if (self._main_fb is not None and
                 self.viewport_width != self._main_fb_dims[0] or
@@ -1088,26 +1092,52 @@ class Renderer(object):
 
             # Generate multisample buffer
             self._main_cb_ms, self._main_db_ms = glGenRenderbuffers(2)
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb_ms)
-            glRenderbufferStorageMultisample(
-                GL_RENDERBUFFER, 4, GL_RGBA,
-                self.viewport_width, self.viewport_height
-            )
-            glBindRenderbuffer(GL_RENDERBUFFER, self._main_db_ms)
-            glRenderbufferStorageMultisample(
-                GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT24,
-                self.viewport_width, self.viewport_height
-            )
-            self._main_fb_ms = glGenFramebuffers(1)
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                GL_RENDERBUFFER, self._main_cb_ms
-            )
-            glFramebufferRenderbuffer(
-                GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                GL_RENDERBUFFER, self._main_db_ms
-            )
+            if not bool(flags & RenderFlags.TRUE_FLAT):
+                glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb_ms)
+                glRenderbufferStorageMultisample(
+                    GL_RENDERBUFFER, 4, GL_RGBA,
+                    self.viewport_width, self.viewport_height
+                )
+                glBindRenderbuffer(GL_RENDERBUFFER, self._main_db_ms)
+                glRenderbufferStorageMultisample(
+                    GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT24,
+                    self.viewport_width, self.viewport_height
+                )
+                self._main_fb_ms = glGenFramebuffers(1)
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
+                glFramebufferRenderbuffer(
+                    GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                    GL_RENDERBUFFER, self._main_cb_ms
+                )
+                glFramebufferRenderbuffer(
+                    GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                    GL_RENDERBUFFER, self._main_db_ms
+                )
+            else:
+                
+                glBindRenderbuffer(GL_RENDERBUFFER, self._main_cb_ms)
+                glRenderbufferStorage(
+                    GL_RENDERBUFFER, GL_RGBA,
+                    self.viewport_width, self.viewport_height
+                )
+
+                glBindRenderbuffer(GL_RENDERBUFFER, self._main_db_ms)
+                glRenderbufferStorage(
+                    GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+                    self.viewport_width, self.viewport_height
+                )
+
+                self._main_fb_ms = glGenFramebuffers(1)
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
+
+                glFramebufferRenderbuffer(
+                    GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                    GL_RENDERBUFFER, self._main_cb_ms
+                )
+                glFramebufferRenderbuffer(
+                    GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                    GL_RENDERBUFFER, self._main_db_ms
+                )
 
             self._main_fb_dims = (self.viewport_width, self.viewport_height)
 
@@ -1234,7 +1264,7 @@ class Renderer(object):
                 )
 
                 # Next, bind the lighting
-                if not flags & RenderFlags.DEPTH_ONLY and not flags & RenderFlags.FLAT:
+                if not flags & RenderFlags.DEPTH_ONLY and not flags & RenderFlags.FLAT and not flags & RenderFlags.SEG and not flags & RenderFlags.TRUE_FLAT:
                     self._bind_lighting(scene, program, node, flags)
 
                 # Finally, bind and draw the primitive
